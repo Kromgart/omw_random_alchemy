@@ -96,11 +96,8 @@ class Effect:
         
 
 class Ingredient:
-    rx_header_name = re.compile(r'\n\s+name:\s+(.+?[^\s])\s*?\n', re.DOTALL)
     rx_header_model = re.compile(r'\n\s+model:\s+(.+?[^\s])\s*?\n', re.DOTALL)
     rx_header_icon = re.compile(r'\n\s+icon:\s+(.+?[^\s])\s*?\n', re.DOTALL)
-    rx_header_weight = re.compile(r'\n\s+weight:\s+([^\s]+)\s*?\n', re.DOTALL)
-    rx_header_value = re.compile(r'\n\s+value:\s+([^\s]+)\s*?\n', re.DOTALL)
 
     def __init__(self, record_id, header, indent, str_effects, tail):
         self.record_id = record_id
@@ -112,38 +109,31 @@ class Ingredient:
         for (eff, attr, skill) in Effect.rx_parse.findall(str_effects):
             self.effects.append(Effect(eff, attr, skill))
 
-        name = self.rx_header_name.search(self.header)
-        if not name:
-            print(f"Warning: ingredient {self.record_id} doesn't have a name")
-        else:
-            name = name.group(1)
+        # ingridients will be considered 'clones' if they have the same
+        # - model
+        # - icon
+        # - effects
 
         model = self.rx_header_model.search(self.header)
         if not model:
             print(f"Warning: ingredient {self.record_id} doesn't have a model")
         else:
             model = model.group(1)
+            model = model.lower().replace("\\", "/")
 
-        icon = self.rx_header_icon.search(self.header)
-        if not icon:
-            print(f"Warning: ingredient {self.record_id} doesn't have an icon")
-        else:
-            icon = icon.group(1)
+            icon = self.rx_header_icon.search(self.header)
+            if not icon:
+                print(f"Warning: ingredient {self.record_id} doesn't have an icon")
+            else:
+                icon = icon.group(1)
+                icon = icon.lower().replace("\\", "/")
             
-        weight = self.rx_header_weight.search(self.header)
-        if not weight:
-            print(f"Warning: ingredient {self.record_id} doesn't have a weight")
-        else:
-            weight = weight.group(1)
-
-        value = self.rx_header_value.search(self.header)
-        if not value:
-            print(f"Warning: ingredient {self.record_id} doesn't have a value")
-        else:
-            value = value.group(1)
-
-        # print(f"{name} {model} {icon} {weight} {value}")
-        self.uniqueness_key = hash((name, model, icon, weight, value))
+            e1, e2, e3, e4 = None, None, None, None
+            if len(self.effects) > 0: e1 = self.effects[0]
+            if len(self.effects) > 1: e2 = self.effects[1]
+            if len(self.effects) > 2: e3 = self.effects[2]
+            if len(self.effects) > 3: e4 = self.effects[3]
+            self.uniqueness_key = hash((model, icon, e1, e2, e3, e4))
 
     def __format__(self, fmt):
         b = [self.record_id]
