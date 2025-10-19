@@ -8,23 +8,25 @@ To use this you need [delta_plugin](https://gitlab.com/portmod/delta-plugin) and
 Put the omw_random_alchemy.py into the directory with delta_plugin and run:
 
 ```shell
-$> python3 omw_random_alchemy.py --ignore-food --min-effects 2 --no-loners
+$> python3 omw_random_alchemy.py --min-effects 2 --ignore-food --no-loners
 Generating plugin with all ingredients...
 WARN Records of type: "LUAL" are not yet supported and will be skipped
 Writing to file ./tmp_source_alchemy.omwaddon...
 Converting plugin with to yaml...
 Writing result to ./tmp_source_alchemy.yaml...
-902 ingredients will be updated, 64 will be kept intact
-Collected 3293 existing effects. The most frequent effect (RestoreFatigue) is used 149 times
+Warning: ingredient hb_baitrandom doesn't have an icon
+Warning: ingredient hb_hemolymph doesn't have a name
+836 ingredients (with 66 clones) will be updated, 64 will be kept intact
+Adding 20 effects to the effects pool due to --no-loners argument
+Collected 3021 existing effects. The most frequent effect (RestoreFatigue) is used 146 times
 Assigning at least 2 effect(s) to each ingredient, starting from most frequent ones...
-Applied 1804 effects evenly onto 902 ingredients
+Applied 1672 effects evenly onto 836 ingredients
 Redistributing remaining effects...
 Generating output yaml: ./randomized_alchemy.yaml
 Converting yaml to plugin...
 WARN Records of type: "LUAL" are not yet supported and will be skipped
 Writing to file ./randomized_alchemy.omwaddon...
 Finished
-
 ```
 
 Now you can move the randomized_alchemy.omwaddon to your mod folders and enable it as you usually do with your mods.
@@ -53,11 +55,12 @@ usage: omw_random_alchemy.py [-h] [--min-effects {1,2,3}] [--keep-yaml] [--ignor
 ### --no-loners
   Depending on your modpack some effects will be present only on one ingredient. This makes it impossible to create a potion of such effect (you need at least two different ingredients with the same effect for that). This flag takes pity on those unfortunate effects and during randomization proces assigns such effect to TWO ingredients instead of one. This makes it theoretically possible to create potions of such effect (if you manage to procure the necessary ingredients of course)
 
+### -i, --input-yaml
+  This option allows to reuse existing .yaml file and skip the first step (exporting ingredients data by delta_plugin)
+
 ### --output-dir OUTPUT_DIR
   By default the script generates intermediate and resulting files in the directory where it is run. You can override this with this option (but create the directory beforehand)
 
 ## Known issues
-
-The game has some 'cursed' version of several ingredients (those usually summon dremora behind you when you pick them up). They should probably have the same properties as a normal 'non-cursed' version. But they are considered by the game as a separate thing, so they get their own effects.
 
 Before the randomization there can be few ingredients without effects at all, like AB_IngFood_DoughRolled, or TR_m2_q_22_Dust. Those are not modified by us and are kept intact.

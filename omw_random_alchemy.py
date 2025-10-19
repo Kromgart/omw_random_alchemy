@@ -2,6 +2,67 @@ import re, sys, random, os, subprocess
 import argparse
 
 
+#---------------------------------------------------------
+#                       Args
+#---------------------------------------------------------
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    "--min-effects", choices=[1, 2, 3], type=int, default=1,
+    help="Ensure that every ingredient has at least this amount of effects (or fail, if that is not possible)"
+)
+
+parser.add_argument(
+    "--keep-yaml", default=False, action="store_true",
+    help="The intermediate *.yaml file with new data will not be deleted, and could be investigated (for science or spoilers)"
+)
+
+parser.add_argument(
+    "--ignore-food", default=False, action="store_true",
+    help="Ingridients that have only one effect 'RestoreFatigue' will be excluded from the process"
+)
+
+parser.add_argument(
+    "--no-loners", default=False, action="store_true",
+    help="For each effect that is assigned to only one ingredient an additional effect instance"
+         "will be added to the pool of effects. This should make it theoretically possible to brew"
+         "a potion with such effect (if you get both ingredients)"
+)
+
+parser.add_argument(
+    "--print-clones", default=False, action="store_true",
+    help="Print record ids of ingredients which were determined to be clones "
+         "(usually this happens because of existence of 'cursed' versions of items). "
+         "Cloned items of the same type will have the same effects"
+)
+
+parser.add_argument(
+    "-i", "--input-yaml", help="Directly give input yaml data. This will skip getting initial data by delta_plugin"
+)
+
+parser.add_argument(
+    "-o", "--output-dir", default="./",
+    help="Path of the directory where the intermediate and the final output file will be generated"
+)
+
+cmd_args = parser.parse_args()
+
+random_mode = "shuffle"
+keep_yaml = cmd_args.keep_yaml
+min_effects = cmd_args.min_effects
+ignore_food = cmd_args.ignore_food
+no_loners = cmd_args.no_loners
+print_clones = cmd_args.print_clones
+yaml_in_custom = cmd_args.input_yaml
+output_dir = cmd_args.output_dir
+
+
+#---------------------------------------------------------
+#                       Helpers
+#---------------------------------------------------------
+
+
 class Effect:
     rx_parse = re.compile(r'\n\s+- effect:\s+(?P<type>\w+)(?:\n\s+attribute:\s+(?P<attribute>\w+))?(?:\n\s+skill:\s+(?P<skill>\w+))?', re.DOTALL)
 
@@ -35,8 +96,14 @@ class Effect:
         
 
 class Ingredient:
-    def __init__(self, name, header, indent, str_effects, tail):
-        self.name = name
+    rx_header_name = re.compile(r'\n\s+name:\s+(.+?[^\s])\s*?\n', re.DOTALL)
+    rx_header_model = re.compile(r'\n\s+model:\s+(.+?[^\s])\s*?\n', re.DOTALL)
+    rx_header_icon = re.compile(r'\n\s+icon:\s+(.+?[^\s])\s*?\n', re.DOTALL)
+    rx_header_weight = re.compile(r'\n\s+weight:\s+([^\s]+)\s*?\n', re.DOTALL)
+    rx_header_value = re.compile(r'\n\s+value:\s+([^\s]+)\s*?\n', re.DOTALL)
+
+    def __init__(self, record_id, header, indent, str_effects, tail):
+        self.record_id = record_id
         self.header = header
         self.tail = tail
         self.indent = sys.intern(indent + "  ")
@@ -44,27 +111,69 @@ class Ingredient:
 
         for (eff, attr, skill) in Effect.rx_parse.findall(str_effects):
             self.effects.append(Effect(eff, attr, skill))
+
+        name = self.rx_header_name.search(self.header)
+        if not name:
+            print(f"Warning: ingredient {self.record_id} doesn't have a name")
+        else:
+            name = name.group(1)
+
+        model = self.rx_header_model.search(self.header)
+        if not model:
+            print(f"Warning: ingredient {self.record_id} doesn't have a model")
+        else:
+            model = model.group(1)
+
+        icon = self.rx_header_icon.search(self.header)
+        if not icon:
+            print(f"Warning: ingredient {self.record_id} doesn't have an icon")
+        else:
+            icon = icon.group(1)
             
+        weight = self.rx_header_weight.search(self.header)
+        if not weight:
+            print(f"Warning: ingredient {self.record_id} doesn't have a weight")
+        else:
+            weight = weight.group(1)
+
+        value = self.rx_header_value.search(self.header)
+        if not value:
+            print(f"Warning: ingredient {self.record_id} doesn't have a value")
+        else:
+            value = value.group(1)
+
+        # print(f"{name} {model} {icon} {weight} {value}")
+        self.uniqueness_key = hash((name, model, icon, weight, value))
+
     def __format__(self, fmt):
-        b = [self.name]
+        b = [self.record_id]
         b.extend(f"{e}" for e in self.effects)
         return "\n".join(b)
 
     def from_yaml(yaml_string, ignore_food):
-        good, skip = [], []
-        rx_iter_ingredients = re.finditer(r'\n(?P<header>\s+"Ingredient::(?P<name>[^"]+)":\s*\n.+?\n(?P<indent>\s+)effects:\s*)(?P<effects>\[\]|\n.+?)(\n(?P<tail>(?P=indent)\w.+?))?(?=$|\n\s+"Ingredient::)',
-                                          yaml_string, re.DOTALL)
+        good, skip, clones = [], [], {}
+        rx_iter_ingredients = re.finditer(
+            r'\n(?P<header>\s+"Ingredient::(?P<record_id>[^"]+)":\s*\n.+?\n(?P<indent>\s+)effects:\s*)'
+            r'(?P<effects>\[\]|\n.+?)'
+            r'(\n(?P<tail>(?P=indent)\w.+?))?(?=$|\n\s+"Ingredient::)',
+            yaml_string, re.DOTALL)
         for i in rx_iter_ingredients:
-            x = Ingredient(i.group("name"), i.group("header"), i.group("indent"), i.group("effects"), i.group("tail"))
+            x = Ingredient(i.group("record_id"), i.group("header"), i.group("indent"), i.group("effects"), i.group("tail"))
             if not x.effects:
                 # let's not touch these ingredient-without-effects, leave them as they are
                 skip.append(x)
             elif ignore_food and len(x.effects) == 1 and x.effects[0].name == "RestoreFatigue":
                 skip.append(x)
+            elif x.uniqueness_key in clones:
+                # this is non-first clone
+                clones[x.uniqueness_key].append(x)
+                if print_clones:
+                    print(f"Clone detected: {x.record_id}")
             else:
+                clones[x.uniqueness_key] = []
                 good.append(x)
 
-        return (good, skip)
+        return (good, clones, skip)
 
 
 def remove_at(lst, idx):
@@ -163,59 +272,32 @@ def move_random_effect(ingredient, jar):
     return False
 
 
+def finish_ingredient(i, clones, output):
+    output_ingredients.append(i)
+    for clone in clones.pop(i.uniqueness_key):
+        clone.effects = i.effects
+        output.append(clone)
+
+
 #---------------------------------------------------------
 #                 Process input data
 #---------------------------------------------------------
 
-parser = argparse.ArgumentParser()
 
-parser.add_argument(
-    "--min-effects", choices=[1, 2, 3], type=int, default=1,
-    help="Ensure that every ingredient has at least this amount of effects (or fail, if that is not possible)"
-)
+if yaml_in_custom:
+    yaml_in_path = yaml_in_custom
+else:
+    plugin_in_path = os.path.join(output_dir, "tmp_source_alchemy.omwaddon")
+    print(f"Generating plugin with all ingredients...")
+    run_result = subprocess.run(["./delta_plugin", "filter", "--all", "-o", f"{plugin_in_path}", "match", "Ingredient"])
+    if run_result.returncode != 0:
+        sys.exit("delta_plugin returned error. Aborting...")
 
-parser.add_argument(
-    "--keep-yaml", default=False, action="store_true",
-    help="The intermediate *.yaml file with new data will not be deleted, and could be investigated (for science or spoilers)"
-)
-
-parser.add_argument(
-    "--ignore-food", default=False, action="store_true",
-    help="Ingridients that have only one effect 'RestoreFatigue' will be excluded from the process"
-)
-
-parser.add_argument(
-    "--no-loners", default=False, action="store_true",
-    help="For each effect that is assigned to only one ingredient an additional effect instance\
-          will be added to the pool of effects. This should make it theoretically possible to brew\
-          a potion with such effect (if you get both ingredients)"
-)
-
-parser.add_argument(
-    "--output-dir", default="./",
-    help="Path of the directory where the intermediate and the final output file will be generated"
-)
-
-cmd_args = parser.parse_args()
-
-random_mode = "shuffle"
-keep_yaml = cmd_args.keep_yaml
-min_effects = cmd_args.min_effects
-ignore_food = cmd_args.ignore_food
-no_loners = cmd_args.no_loners
-output_dir = cmd_args.output_dir
-
-plugin_in_path = os.path.join(output_dir, "tmp_source_alchemy.omwaddon")
-print(f"Generating plugin with all ingredients...")
-run_result = subprocess.run(["./delta_plugin", "filter", "--all", "-o", f"{plugin_in_path}", "match", "Ingredient"])
-if run_result.returncode != 0:
-    sys.exit("delta_plugin returned error. Aborting...")
-
-yaml_in_path = os.path.join(output_dir, "tmp_source_alchemy.yaml")
-print(f"Converting plugin with to yaml...")
-run_result = subprocess.run(["./delta_plugin", "convert", "-o", f"{output_dir}", f"{plugin_in_path}"])
-if run_result.returncode != 0:
-    sys.exit("delta_plugin returned error. Aborting...")
+    yaml_in_path = os.path.join(output_dir, "tmp_source_alchemy.yaml")
+    print(f"Converting plugin with to yaml...")
+    run_result = subprocess.run(["./delta_plugin", "convert", "-o", f"{output_dir}", f"{plugin_in_path}"])
+    if run_result.returncode != 0:
+        sys.exit("delta_plugin returned error. Aborting...")
 
 yaml_in = open(yaml_in_path).read()
 
@@ -223,13 +305,15 @@ file_header = re.search(r'^.+\nrecords:', yaml_in, re.DOTALL)
 if not file_header:
    print("Cannot parse the plugin's header from the input. Aborting...") 
 
+# simple regex that should definitely catch all ingredients, used for double checks
 ingredients_all = re.findall(r'\n\s+"Ingredient::([^"]+)":', yaml_in, re.DOTALL)
 
-(tmp_ingredients, output_ingredients) = Ingredient.from_yaml(yaml_in, ignore_food)
-
+(tmp_ingredients, ingredient_clones, output_ingredients) = Ingredient.from_yaml(yaml_in, ignore_food)
+clones_count = sum(len(xs) for xs in ingredient_clones.values())
+print(f"{len(tmp_ingredients)} ingredients (with {clones_count} clones) will be updated, {len(output_ingredients)} will be kept intact")
+ 
 # to ensure we didn't miss someone with the big regex
-assert len(ingredients_all) == (len(tmp_ingredients) + len(output_ingredients))
-print(f"{len(tmp_ingredients)} ingredients will be updated, {len(output_ingredients)} will be kept intact")
+assert len(ingredients_all) == (len(tmp_ingredients) + clones_count + len(output_ingredients))
 
 #---------------------------------------------------------
 #            Prepare and distribute effects
@@ -274,16 +358,17 @@ while jar:
     if not move_random_effect(ingredient, jar) or len(ingredient.effects) == 4:
         # Either the ingredient has 4 effects, or there
         # are no valid effect left in the jar for it
-        output_ingredients.append(ingredient)
+        finish_ingredient(ingredient, ingredient_clones, output_ingredients)
         remove_at(tmp_ingredients, idx)
-        
 
+for i in tmp_ingredients:
+    finish_ingredient(i, ingredient_clones, output_ingredients)
 
-# print(f"Done. There are {len(tmp_ingredients)} ingredients with less than 4 effects")
-output_ingredients.extend(tmp_ingredients)
+assert not ingredient_clones
 tmp_ingredients.clear()
-    
+
 # Did we lose something?
+# print(f"{len(ingredients_all)} == {len(output_ingredients)}")
 assert len(ingredients_all) == len(output_ingredients)
 
 #---------------------------------------------------------
@@ -322,7 +407,8 @@ if run_result.returncode != 0:
 if not keep_yaml:
     os.remove(yaml_out_path)
 
-os.remove(yaml_in_path)
-os.remove(plugin_in_path)
+if not yaml_in_custom:
+    os.remove(yaml_in_path)
+    os.remove(plugin_in_path)
 
 print("Finished")
