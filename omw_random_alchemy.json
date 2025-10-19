@@ -1,0 +1,7 @@
+{
+  "ignore_ingredients": [
+    ".*corprusmeat",
+    ".*human_meat",
+    ".*poison"
+  ]
+} 

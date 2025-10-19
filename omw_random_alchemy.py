@@ -150,7 +150,7 @@ class Ingredient:
         b.extend(f"{e}" for e in self.effects)
         return "\n".join(b)
 
-    def from_yaml(yaml_string, ignore_food):
+    def from_yaml(yaml_string, ignore_food, ignore_recordids_rxs):
         good, skip, clones = [], [], {}
         rx_iter_ingredients = re.finditer(
             r'\n(?P<header>\s+"Ingredient::(?P<record_id>[^"]+)":\s*\n.+?\n(?P<indent>\s+)effects:\s*)'
@@ -170,8 +170,14 @@ class Ingredient:
                 if print_clones:
                     print(f"Clone detected: {x.record_id}")
             else:
-                clones[x.uniqueness_key] = []
-                good.append(x)
+                for rx in ignore_recordids_rxs:
+                    if rx.match(x.record_id):
+                        print(f"Ignoring {x.record_id}")
+                        skip.append(x)
+                        break
+                else:
+                    clones[x.uniqueness_key] = []
+                    good.append(x)
 
         return (good, clones, skip)
 
@@ -194,10 +200,11 @@ def strip_effects_into_jar(ingredients, no_loners):
     max_freq = 0
     for i in ingredients:
         for e in i.effects:
-            this_freq = aggregator.get(e, 0) + 1
-            aggregator[e] = this_freq
-            max_freq = max(max_freq, this_freq)
-            collected += 1
+            if e.name != "Vampirism": # I think this is useless anyway
+                this_freq = aggregator.get(e, 0) + 1
+                aggregator[e] = this_freq
+                max_freq = max(max_freq, this_freq)
+                collected += 1
 
         i.effects.clear()
        
@@ -208,7 +215,9 @@ def strip_effects_into_jar(ingredients, no_loners):
 
 
     if no_loners and jar[1]:
-        print(f"Adding {len(jar[1])} effects to the effects pool due to --no-loners argument")
+        print(f"Now adding {len(jar[1])} effects to the effects pool due to --no-loners argument:")
+        for ef in jar[1]:
+            print(f"{ef}")
         jar[2].extend(jar[1])
         jar[1].clear()
     
@@ -283,10 +292,19 @@ def finish_ingredient(i, clones, output):
 #                 Process input data
 #---------------------------------------------------------
 
+ignore_ingredients_rxs = []
+config_path = "./omw_random_alchemy.json"
+if os.path.exists(config_path):
+    import json
+    config = json.load(open(config_path))
+    for ignored in config["ignore_ingredients"]:
+        ignore_ingredients_rxs.append(re.compile(ignored, re.I))
+
 
 if yaml_in_custom:
     yaml_in_path = yaml_in_custom
 else:
+    # use delta_plugin to get the yaml data
     plugin_in_path = os.path.join(output_dir, "tmp_source_alchemy.omwaddon")
     print(f"Generating plugin with all ingredients...")
     run_result = subprocess.run(["./delta_plugin", "filter", "--all", "-o", f"{plugin_in_path}", "match", "Ingredient"])
@@ -308,7 +326,7 @@ if not file_header:
 # simple regex that should definitely catch all ingredients, used for double checks
 ingredients_all = re.findall(r'\n\s+"Ingredient::([^"]+)":', yaml_in, re.DOTALL)
 
-(tmp_ingredients, ingredient_clones, output_ingredients) = Ingredient.from_yaml(yaml_in, ignore_food)
+(tmp_ingredients, ingredient_clones, output_ingredients) = Ingredient.from_yaml(yaml_in, ignore_food, ignore_ingredients_rxs)
 clones_count = sum(len(xs) for xs in ingredient_clones.values())
 print(f"{len(tmp_ingredients)} ingredients (with {clones_count} clones) will be updated, {len(output_ingredients)} will be kept intact")
  
