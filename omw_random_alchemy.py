@@ -272,6 +272,15 @@ def move_random_effect(ingredient, jar):
 
 
 def finish_ingredient(i, clones, output):
+    # up to now the ingredient effects are stored from most frequent
+    # to least frequent (done to minimize clashes of duplicates)
+    # This will be shuffled now
+    new_effects = []
+    while i.effects:
+        e = remove_random(i.effects)
+        new_effects.append(e)
+
+    i.effects = new_effects
     output_ingredients.append(i)
     for clone in clones.pop(i.uniqueness_key):
         clone.effects = i.effects
