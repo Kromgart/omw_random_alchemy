@@ -5,6 +5,8 @@ This is a python script that can generate a new plugin file, where effects on al
 To use this you need [delta_plugin](https://gitlab.com/portmod/delta-plugin) and python3 installed. The script uses delta_plugin to convert the ingredients data to yaml format, modifies that yaml file, and then uses delta_plugin again to generate a new *.omwaddon file.
 
 ### Usage
+Note: Since the purpose is to completely replace the ingredient effects, you should do all this *after* generating the main delta_merged.omwaddon merged plugin.
+
 Put the omw_random_alchemy.py and omw_random_alchemy.json into the directory with delta_plugin and run:
 
 ```
@@ -54,8 +56,7 @@ Writing to file ./randomized_alchemy.omwaddon...
 Finished
 ```
 
-Now you can move the randomized_alchemy.omwaddon to your mod folders and enable it as you usually do with your mods.
-
+Now you can move the randomized_alchemy.omwaddon to your mod folders and add it to the end of your load list.
 Result (look at that stoneflower...):
 
 ![Ingredients with randomized effects](https://github.com/Kromgart/omw_random_alchemy/blob/main/rand_alch.png "Ingredients with randomized effects")
