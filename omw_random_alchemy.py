@@ -184,13 +184,20 @@ def remove_random(lst):
     idx = random.randrange(len(lst))
     return remove_at(lst, idx)
 
+# avoid adding useless effects
+banned_effects = {
+    "Vampirism",
+    "FrenzyHumanoid",
+    "FrenzyCreature"
+}
+
 def strip_effects_into_jar(ingredients, no_loners):
     aggregator = {}
     collected = 0
     max_freq = 0
     for i in ingredients:
         for e in i.effects:
-            if e.name != "Vampirism": # I think this is useless anyway
+            if e.name not in banned_effects:
                 this_freq = aggregator.get(e, 0) + 1
                 aggregator[e] = this_freq
                 max_freq = max(max_freq, this_freq)
