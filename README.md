@@ -57,7 +57,6 @@ Finished
 ```
 
 Now you can move the randomized_alchemy.omwaddon to your mod folders and add it to the end of your load list.
-Result (look at that stoneflower...):
 
 ![Ingredients with randomized effects](https://github.com/Kromgart/omw_random_alchemy/blob/main/rand_alch.png "Ingredients with randomized effects")
 
@@ -90,6 +89,8 @@ usage: omw_random_alchemy.py [-h] [--min-effects {1,2,3}] [--keep-yaml] [--ignor
 ## Ignore list
 You can blacklist some ingredients from randomization and keep them unmodified. The omw_random_alchemy.json file controls that list.
 
-## Known issues
+## Notes
 
-Before the randomization there can be few ingredients without effects at all, like AB_IngFood_DoughRolled, or TR_m2_q_22_Dust. Those are not modified by us and are kept intact.
+  - Before the randomization there can be few ingredients without effects at all, like AB_IngFood_DoughRolled, or TR_m2_q_22_Dust. Those are not modified and are kept intact.
+  - Vampirism effect is useless and is removed during the process
+  - FrenzyCreature and FrenzyHumanoid on potions make no sense: they don't do anything for the player, and if you use that potion to make a poisoned attack on someone (via mods), the target will become hostile anyway. Therefore these effects are substituted for CommandCreature and CommandHumanoid.
