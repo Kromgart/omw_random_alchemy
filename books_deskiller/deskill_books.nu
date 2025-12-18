@@ -21,8 +21,8 @@ def main [] {
   $plugin | save -f ./deskilled_books.yaml
 
   delta_plugin convert -o ../ ./deskilled_books.yaml
+  cd ..
 
   rm -rf ./deskilled_books.tmp
-  
 }
 
